@@ -26,8 +26,6 @@ import org.jspecify.annotations.Nullable;
  */
 public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
 
-  protected final Set<V> allValues = createSetWithStoreContainsSemantics();
-
   protected final Map<Index<?, V>, Map<?, Set<V>>> indexedValuesByIndex = new HashMap<>();
 
   protected final Map<V, Set<CurrentKeyMapping<?, V>>> reverseIndexMap = createMapWithStoreContainsSemantics();
@@ -42,7 +40,7 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
           if (contains(value)) {
             return false;
           } else {
-            allValues.add(value);
+            reverseIndexMap.put(value, new HashSet<>());
             updateAllIndices(value);
             return true;
           }
@@ -52,7 +50,7 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
 
   @Override
   public boolean contains(V value) {
-    return guard.writeGuard(() -> allValues.contains(value));
+    return guard.writeGuard(() -> reverseIndexMap.containsKey(value));
   }
 
   @Override
@@ -76,7 +74,7 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
       }
 
       removeFromAllIndices(value);
-      allValues.remove(value);
+      reverseIndexMap.remove(value);
       return true;
     });
   }
@@ -104,7 +102,8 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
 
   @Override
   public Set<V> values() {
-    return guard.readGuard(() -> Collections.unmodifiableSet(createSetWithStoreContainsSemantics(allValues)));
+    return guard.readGuard(
+        () -> Collections.unmodifiableSet(createSetWithStoreContainsSemantics(reverseIndexMap.keySet())));
   }
 
   @Override
@@ -148,7 +147,7 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
   @Override
   public void clear() {
     guard.writeGuard(() -> {
-      allValues.clear();
+      reverseIndexMap.clear();
       indexedValuesByIndex.keySet().forEach(index -> indexedValuesByIndex.put(index, new HashMap<>()));
     });
   }
@@ -218,7 +217,7 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
   private <K> void createIndex(Index<K, V> index) {
     indexedValuesByIndex.put(index, new HashMap<>());
     // need to make a copy since creating a unique index on the fly could remove values here
-    var allValuesCopy = createSetWithStoreContainsSemantics(allValues);
+    var allValuesCopy = createSetWithStoreContainsSemantics(reverseIndexMap.keySet());
     allValuesCopy.forEach(v -> index(v, index));
   }
 
@@ -247,8 +246,6 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
         }
       }
     }
-
-    reverseIndexMap.remove(value);
   }
 
 }
