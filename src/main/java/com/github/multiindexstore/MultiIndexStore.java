@@ -1,234 +1,107 @@
 package com.github.multiindexstore;
 
-import java.util.Collections;
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.IdentityHashMap;
-import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
-import java.util.concurrent.locks.ReadWriteLock;
-import java.util.concurrent.locks.ReentrantReadWriteLock;
 import java.util.function.Function;
-import java.util.function.Supplier;
 import org.jspecify.annotations.Nullable;
 
 /**
- * An object store that can be indexed by multiple keys. Keys must not change their equals/hashCode
- * values during the lifetime of their usage. Values can be mutable, but the {@link #add(Object)}
- * method must be called after changing the values of an object to reindex.
+ * An object store that allows indexing its elements by multiple indices. Objects can be added, removed, and queried by
+ * index.
  *
- * <p>Instances are thread-safe.
- *
- * @param <V> The type of value this store holds.
+ * @param <V>
  */
-public final class MultiIndexStore<V> {
+public interface MultiIndexStore<V> {
 
-  private final Set<V> allValues = Util.newIdentityHashSet();
+  /**
+   * Adds an object if the store does not {@link #contains(Object) contain} it already. Containment semantics vary by
+   * implementation. See the documentation on {@link #contains(Object)} for details.
+   *
+   * @param value the (potentially new) value
+   * @return true if the value was new and added, false if the value was already present
+   * @throws NullPointerException if the value is null
+   */
+  boolean insert(V value);
 
-  private final Map<Index<?, V>, Map<?, Set<V>>> indexedValuesByIndex = new HashMap<>();
+  /**
+   * Returns true if the given value is already present in the store.
+   * <p>
+   * Whether a value is considered to be already contained is up to the implementation. For example, it could use
+   * {@link Object#equals(Object)} and {@link Object#hashCode()} for the check, or object identity. Subclasses are
+   * encouraged to overwrite this JavaDoc specifying the concrete strategy.
+   *
+   * @param value the value to test
+   * @return whether the value is already contained in the store
+   * @throws NullPointerException if the value is null
+   */
+  boolean contains(V value);
 
-  private final Map<V, Set<CurrentKeyMapping<?, V>>> reverseIndexMap = new IdentityHashMap<>();
+  /**
+   * Returns the value stored under the given unique key, or {@link Optional#empty()} if the value is not present.
+   *
+   * @param index the index to look up
+   * @param key   key value to look up, must not be null
+   * @param <K>   type of the key
+   * @return the single value stored under this unique key, or {@link Optional#empty()} if no value is stored for this
+   * key
+   * @throws UnknownIndexException if the given index was not created by this store
+   * @throws NullPointerException  if any of the parameters is null
+   */
+  <K> Optional<V> findBy(Index.Unique<K, V> index, K key);
 
-  private final ReadWriteLock lock = new ReentrantReadWriteLock();
+  /**
+   * Returns the values stored under this key, or an empty set if no values are present.
+   *
+   * @param index the index to look up
+   * @param key   key value to look up, must not be null
+   * @param <K>   type of the key
+   * @return a set of values stored under this key. The set is immutable.
+   * @throws UnknownIndexException if the given index was not created by this store
+   * @throws NullPointerException  if any of the parameters is null
+   */
+  <K> Set<V> findBy(Index.NonUnique<K, V> index, K key);
 
-  // TODO javadoc
-  public boolean add(V value) {
-    Objects.requireNonNull(value, "value");
+  /**
+   * Removes a value from the store if it is {@link #contains(Object) contained}.
+   *
+   * @param value the value
+   * @return true if the value was present and removed, false if the value was not present
+   * @throws NullPointerException if the value is null
+   */
+  boolean remove(V value);
 
-    return writeGuard(() -> {
-          if (contains(value)) {
-            return false;
-          } else {
-            insert(value);
-            return true;
-          }
-        }
-    );
-  }
+  /**
+   * Creates a unique index for this store. Unique indices map to at most one value per key.
+   * {@link #insert(Object) adding} an object with a unique key for which there is already an existing object found will
+   * remove that existing object from the store entirely.
+   * <p>
+   * Creating a unique index in a store that already contains values has undefined semantics if there are multiple
+   * values present that map to the same unique key. Implementations may throw an exception or just select one value to
+   * keep arbitrarily.
+   * <p>
+   * Only indices created by this store can be used for {@link #findBy(Index.Unique, Object)}. You cannot use indices
+   * from different stores, nor can you provide arbitrary index implementations.
+   *
+   * @param keyMapper a function describing how to extract the key represented by this index for a given value
+   * @param <K>       type of the key
+   * @return a unique index belonging to this store
+   * @throws NullPointerException if the {@code keyMapper} is null
+   */
+  <K> Index.Unique<K, V> createUniqueIndex(Function<V, @Nullable K> keyMapper);
 
-  // TODO javadoc
-  public boolean update(V value) {
-    Objects.requireNonNull(value, "value");
-
-    return writeGuard(() -> {
-      if (contains(value)) {
-        reindex(value);
-        return true;
-      } else {
-        return false;
-      }
-    });
-  }
-
-  // TODO javadoc
-  public boolean contains(V value) {
-    return writeGuard(() -> allValues.contains(value));
-  }
-
-  // TODO javadoc
-  public <K> Optional<V> get(Index.Unique<K, V> index, K key) {
-    return readGuard(() -> getByIndex(index, key).stream().findAny());
-  }
-
-  // TODO javadoc
-  public <K> Set<V> get(Index.NonUnique<K, V> index, K key) {
-    return readGuard(() -> {
-      var resultSet = createSet(getByIndex(index, key));
-      return Collections.unmodifiableSet(resultSet);
-    });
-  }
-
-  // TODO javadoc
-
-  public boolean remove(V value) {
-    return writeGuard(() -> {
-      if (!contains(value)) {
-        return false;
-      }
-
-      removeFromAllIndices(value);
-      allValues.remove(value);
-      return true;
-    });
-  }
-  // TODO javadoc
-
-  public <K> Index.Unique<K, V> createUniqueIndex(Function<V, @Nullable K> keyMapper) {
-    Objects.requireNonNull(keyMapper);
-    return writeGuard(() -> {
-          var index = new Index.Unique<>(keyMapper);
-          createIndex(index);
-          return index;
-        }
-    );
-  }
-
-  // TODO javadoc
-  public <K> Index.NonUnique<K, V> createIndex(Function<V, @Nullable K> keyMapper) {
-    Objects.requireNonNull(keyMapper);
-    return writeGuard(() -> {
-      var index = new Index.NonUnique<>(keyMapper);
-      createIndex(index);
-      return index;
-    });
-  }
-
-  private <K> Set<V> createSet(Set<V> value) {
-    Set<V> resultSet = Util.newIdentityHashSet();
-    resultSet.addAll(value);
-    return resultSet;
-  }
-
-  private <K> Set<V> getByIndex(Index<K, V> index, K key) {
-    Objects.requireNonNull(index, "index");
-    Objects.requireNonNull(key, "key");
-
-    if (!indexedValuesByIndex.containsKey(index)) {
-      throw new IllegalArgumentException("Provided index is not a member of this store");
-    }
-
-    return indexedValuesByIndex.get(index).getOrDefault(key, Set.of());
-  }
-
-  private void insert(V value) {
-    allValues.add(value);
-    updateAllIndices(value);
-  }
-
-  private void updateAllIndices(V value) {
-    for (Index<?, V> index : indexedValuesByIndex.keySet()) {
-      index(value, index);
-    }
-  }
-
-  private void index(V value, Index<?, V> index) {
-    Object key = index.getKey(value);
-
-    if (key != null) {
-      Map<Object, Set<V>> valuesByKey = (Map<Object, Set<V>>) indexedValuesByIndex.get(index);
-
-      switch (index) {
-        case Index.Unique u -> {
-          Set<V> existingValue = valuesByKey.get(key);
-          if (existingValue != null && !existingValue.contains(value)) {
-            remove(existingValue.iterator().next());
-          }
-          if (existingValue == null || !existingValue.contains(value)) {
-            valuesByKey.put(key, createSet(Set.of(value)));
-          }
-        }
-        case Index.NonUnique n -> {
-          valuesByKey.computeIfAbsent(key, (__) -> Util.newIdentityHashSet());
-          valuesByKey.get(key).add(value);
-        }
-      }
-
-      addToReverseIndices(value, index, key);
-    }
-  }
-
-  private <K> void addToReverseIndices(V value, Index<?, V> index, K key) {
-    reverseIndexMap.computeIfAbsent(value, (__) -> new HashSet<>());
-    reverseIndexMap.get(value).add(new CurrentKeyMapping<Object, V>((Index<Object, V>) index, key));
-  }
-
-  private void reindex(V value) {
-    removeFromAllIndices(value);
-    updateAllIndices(value);
-  }
-
-  private <K> void createIndex(Index<K, V> index) {
-    indexedValuesByIndex.put(index, new HashMap<>());
-    allValues.forEach(v -> index(v, index));
-  }
-
-  private void removeFromAllIndices(V value) {
-    if (!reverseIndexMap.containsKey(value)) {
-      return;
-    }
-
-    var indicesToRemoveValueFrom = reverseIndexMap.getOrDefault(value, Set.of());
-
-    for (CurrentKeyMapping<?, V> currentKeyMapping : indicesToRemoveValueFrom) {
-      Index<?, V> index = currentKeyMapping.index();
-      Object oldKey = currentKeyMapping.key();
-
-      switch (index) {
-        case Index.Unique u -> indexedValuesByIndex.get(index).remove(oldKey);
-        case Index.NonUnique n -> {
-          Set<V> valuesForKey = indexedValuesByIndex.get(index).get(oldKey);
-
-          if (valuesForKey != null) {
-            valuesForKey.remove(value);
-          }
-        }
-      }
-    }
-
-    reverseIndexMap.remove(value);
-  }
-
-  private <T> T readGuard(Supplier<T> supplier) {
-    try {
-      lock.readLock().lock();
-      return supplier.get();
-    } finally {
-      lock.readLock().unlock();
-    }
-  }
-
-  private <T> T writeGuard(Supplier<T> supplier) {
-    try {
-      lock.writeLock().lock();
-      return supplier.get();
-    } finally {
-      lock.writeLock().unlock();
-    }
-  }
-
-  private record CurrentKeyMapping<K, V>(Index<K, V> index, K key) {
-
-  }
+  /**
+   * Creates a non-unique index for this store. Non-unique indices map to multiple values per key.
+   * <p>
+   * A non-unique index can be added if the store already contains values, in which case all existing values will be
+   * indexed.
+   * <p>
+   * Only indices created by this store can be used for {@link #findBy(Index.NonUnique, Object)}. You cannot use indices
+   * from different stores, nor can you provide arbitrary index implementations.
+   *
+   * @param keyMapper a function describing how to extract the key represented by this index for a given value
+   * @param <K>       type of the key
+   * @return a unique index belonging to this store
+   * @throws NullPointerException if the {@code keyMapper} is null
+   */
+  <K> Index.NonUnique<K, V> createIndex(Function<V, @Nullable K> keyMapper);
 }

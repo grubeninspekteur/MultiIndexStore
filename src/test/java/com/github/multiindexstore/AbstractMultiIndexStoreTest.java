@@ -13,35 +13,37 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
-@DisplayName("Multi index store")
-class MultiIndexStoreTest {
+abstract class AbstractMultiIndexStoreTest<S extends MultiIndexStore<User>> {
 
-  private final MultiIndexStore<User> store = new MultiIndexStore<>();
+  protected final S store = createStore();
 
-  private final User johnDoe = new User(1L, "John", "Doe");
-  private final User janeDoe = new User(2L, "Jane", "Doe");
-  private final User johnDoeCopy = new User(1L, "John", "Doe");
-  private final User robertSmith = new User(3L, "Robert", "Smith");
+  protected final User johnDoe = new User(1L, "John", "Doe");
+  protected final User janeDoe = new User(2L, "Jane", "Doe");
+  protected final User johnDoeCopy = new User(1L, "John", "Doe");
+  protected final User robertSmith = new User(3L, "Robert", "Smith");
+
+  protected abstract S createStore();
 
   @Test
-  @DisplayName("stores and retrieves non-mutable values")
-  void addAndRetrieveNonMutableValue() {
+  @DisplayName("stores and retrieves values")
+  void insertAndRetrieveValues() {
     var firstNameIndex = store.createIndex(User::getFirstName);
     var lastNameIndex = store.createIndex(User::getLastName);
     var idIndex = store.createUniqueIndex(User::getId);
 
-    store.add(johnDoe);
-    store.add(janeDoe);
-    store.add(robertSmith);
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+    store.insert(robertSmith);
 
-    assertThat(store.get(idIndex, 1L)).contains(johnDoe);
-    assertThat(store.get(idIndex, 2L)).contains(janeDoe);
-    assertThat(store.get(idIndex, 3L)).contains(robertSmith);
-    assertThat(store.get(idIndex, 42L)).isEmpty();;
+    assertThat(store.findBy(idIndex, 1L)).contains(johnDoe);
+    assertThat(store.findBy(idIndex, 2L)).contains(janeDoe);
+    assertThat(store.findBy(idIndex, 3L)).contains(robertSmith);
+    assertThat(store.findBy(idIndex, 42L)).isEmpty();
+    ;
 
-    assertThat(store.get(firstNameIndex, "John")).containsExactly(johnDoe);
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe, janeDoe);
-    assertThat(store.get(firstNameIndex, "Unknown")).isEmpty();
+    assertThat(store.findBy(firstNameIndex, "John")).containsExactly(johnDoe);
+    assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe, janeDoe);
+    assertThat(store.findBy(firstNameIndex, "Unknown")).isEmpty();
   }
 
   @Test
@@ -50,9 +52,9 @@ class MultiIndexStoreTest {
     var lastNameIndex = store.createIndex(User::getLastName);
     var idIndex = store.createIndex(User::getId);
 
-    store.add(johnDoe);
-    store.add(janeDoe);
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe, janeDoe);
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+    assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe, janeDoe);
 
     assertThat(store.contains(johnDoe)).isTrue();
     assertThat(store.contains(janeDoe)).isTrue();
@@ -60,8 +62,8 @@ class MultiIndexStoreTest {
 
     assertThat(store.remove(johnDoe)).isTrue();
 
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(janeDoe);
-    assertThat(store.get(idIndex, johnDoe.getId())).isEmpty();
+    assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(janeDoe);
+    assertThat(store.findBy(idIndex, johnDoe.getId())).isEmpty();
 
     assertThat(store.remove(johnDoe)).isFalse();
   }
@@ -69,33 +71,33 @@ class MultiIndexStoreTest {
   @Test
   @DisplayName("allows adding an index for existing values")
   void createIndexForExistingValue() {
-    store.add(johnDoe);
-    store.add(janeDoe);
-    store.add(robertSmith);
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+    store.insert(robertSmith);
     store.remove(robertSmith);
 
     var lastNameIndex = store.createIndex(User::getLastName);
 
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe, janeDoe);
-    assertThat(store.get(lastNameIndex, "Smith")).isEmpty();
+    assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe, janeDoe);
+    assertThat(store.findBy(lastNameIndex, "Smith")).isEmpty();
 
-    store.add(robertSmith);
-    assertThat(store.get(lastNameIndex, "Smith")).containsExactly(robertSmith);
+    store.insert(robertSmith);
+    assertThat(store.findBy(lastNameIndex, "Smith")).containsExactly(robertSmith);
   }
 
   @Test
   @DisplayName("remove value entirely if same unique index presented")
-  void addValueWithSameUniqueIndex() {
+  void insertValueWithSameUniqueIndex() {
     var idIndex = store.createUniqueIndex(User::getId);
     var lastNameIndex = store.createIndex(User::getLastName);
 
-    store.add(johnDoe);
-    assertThat(store.get(idIndex, 1L)).contains(johnDoe);
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe);
+    store.insert(johnDoe);
+    assertThat(store.findBy(idIndex, 1L)).contains(johnDoe);
+    assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe);
 
-    store.add(johnDoeCopy);
-    assertThat(store.get(idIndex, 1L)).contains(johnDoeCopy);
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoeCopy);
+    store.insert(johnDoeCopy);
+    assertThat(store.findBy(idIndex, 1L)).contains(johnDoeCopy);
+    assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoeCopy);
   }
 
   @Test
@@ -104,40 +106,40 @@ class MultiIndexStoreTest {
     var lastNameIndex = store.createIndex(User::getLastName);
     var firstNameIndex = store.createIndex(User::getFirstName);
     var peter = new User(10L, "Peter", null);
-    store.add(johnDoe);
-    store.add(peter);
+    store.insert(johnDoe);
+    store.insert(peter);
 
     assertThat(store.contains(johnDoe)).isTrue();
     assertThat(store.contains(peter)).isTrue();
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe);
-    assertThat(store.get(firstNameIndex, "Peter")).containsExactlyInAnyOrder(peter);
+    assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe);
+    assertThat(store.findBy(firstNameIndex, "Peter")).containsExactlyInAnyOrder(peter);
   }
 
   @Test
   @DisplayName("rejects null values")
   void rejectsNullValues() {
-    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() ->store.add(null));
+    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> store.insert(null));
   }
 
   @Test
   @DisplayName("rejects null indices and keys for get")
-  void rejectsNullIndicesAndKeysForGet() {
-    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() ->store.get((Index.Unique) null, "a"));
-    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() ->store.get((Index.NonUnique) null, "a"));
+  void rejectsNullIndicesAndKeysForFindBy() {
+    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> store.findBy((Index.Unique) null, "a"));
+    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> store.findBy((Index.NonUnique) null, "a"));
 
     var firstNameIndex = store.createIndex(User::getFirstName);
     var idIndex = store.createUniqueIndex(User::getLastName);
 
-    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() ->store.get(firstNameIndex, null));
-    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() ->store.get(idIndex, null));
+    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> store.findBy(firstNameIndex, null));
+    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> store.findBy(idIndex, null));
 
   }
 
   @Test
   @DisplayName("rejects null key mappers")
   void rejectsNullKeyMappers() {
-    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() ->store.createIndex(null));
-    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() ->store.createUniqueIndex(null));
+    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> store.createIndex(null));
+    assertThatExceptionOfType(NullPointerException.class).isThrownBy(() -> store.createUniqueIndex(null));
   }
 
   @Test
@@ -160,26 +162,27 @@ class MultiIndexStoreTest {
   @Test
   @DisplayName("rejects foreign indices")
   void rejectsForeignIndices() {
-    var otherStore = new MultiIndexStore<User>();
+    var otherStore = createStore();
     var lastNameIndex = otherStore.createIndex(User::getLastName);
     assertThatExceptionOfType(IllegalArgumentException.class)
-        .isThrownBy(() -> store.get(lastNameIndex, "Doe"))
+        .isThrownBy(() -> store.findBy(lastNameIndex, "Doe"))
         .withMessage("Provided index is not a member of this store");
   }
 
   @Test
   @DisplayName("allows null keys")
 
-  private Runnable createInsertReadRemoveTask(NonUnique<String, User> lastNameIndex, User user, CyclicBarrier cyclicBarrier) {
+  private Runnable createInsertReadRemoveTask(NonUnique<String, User> lastNameIndex, User user,
+      CyclicBarrier cyclicBarrier) {
     return () -> {
       for (int i = 0; i < 100; i++) {
         try {
-          store.add(user);
-          assertThat(store.get(lastNameIndex, user.getLastName())).contains(user);
+          store.insert(user);
+          assertThat(store.findBy(lastNameIndex, user.getLastName())).contains(user);
           assertThat(store.contains(user)).isTrue();
 
           store.remove(user);
-          assertThat(store.get(lastNameIndex, user.getLastName())).doesNotContain(user);
+          assertThat(store.findBy(lastNameIndex, user.getLastName())).doesNotContain(user);
           assertThat(store.contains(user)).isFalse();
 
           cyclicBarrier.await();

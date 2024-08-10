@@ -3,6 +3,7 @@ package com.github.multiindexstore;
 import java.util.Objects;
 
 public class User {
+
   private long id;
   private String firstName;
   private String lastName;

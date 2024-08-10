@@ -1,34 +1,43 @@
 package com.github.multiindexstore;
 
-import java.util.Objects;
-import java.util.function.Function;
 import org.jspecify.annotations.Nullable;
 
-public abstract sealed class Index<K, V> {
+/**
+ * An index in a {@link MultiIndexStore}. Indices are only usable by the store that created them. The key mapping
+ * function produces a key under which a value is stored.
+ *
+ * @param <K> the type of key produced by the key mapper
+ * @param <V> the type of value stored in the store this index belongs to
+ */
+public sealed interface Index<K, V> {
 
-  private final Function<V, @Nullable K> keyMapper;
+  /**
+   * Returns the key for a given value.
+   *
+   * @param value the value
+   * @return the key, can be null
+   */
+  @Nullable
+  K getKey(V value);
 
-  Index(Function<V, @Nullable K> keyMapper) {
-    this.keyMapper = keyMapper;
+  /**
+   * A unique index stores at most one object per key. Inserting an object with the same unique index key as an existing
+   * object will remove the existing object from the store.
+   *
+   * @param <K> the type of key produced by the key mapper
+   * @param <V> the type of value stored in the store this index belongs to
+   */
+  non-sealed interface Unique<K, V> extends Index<K, V> {
+
   }
 
-  public @Nullable K getKey(V value) {
-    Objects.requireNonNull(value, "value");
-    return keyMapper.apply(value);
+  /**
+   * A non-unique index stores multiple objects per key.
+   *
+   * @param <K> the type of key produced by the key mapper
+   * @param <V> the type of value stored in the store this index belongs to
+   */
+  non-sealed interface NonUnique<K, V> extends Index<K, V> {
+
   }
-
-  static final class Unique<K, V> extends Index<K, V> {
-
-    Unique(Function<V, @Nullable K> keyMapper) {
-      super(keyMapper);
-    }
-  }
-
-  static final class NonUnique<K, V> extends Index<K, V> {
-
-    NonUnique(Function<V, @Nullable K> keyMapper) {
-      super(keyMapper);
-    }
-  }
-
 }
