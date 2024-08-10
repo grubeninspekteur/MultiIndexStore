@@ -47,10 +47,15 @@ public class IdentityMultiIndexStoreTest extends AbstractMultiIndexStoreTest<Ide
     assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(janeDoe, johnDoe);
     assertThat(store.findBy(lastNameIndex, "Miller")).isEmpty();
 
-    store.update(johnDoe);
+    assertThat(store.update(johnDoe)).isTrue();
 
     assertThat(store.findBy(lastNameIndex, "Doe")).containsExactlyInAnyOrder(janeDoe);
     assertThat(store.findBy(lastNameIndex, "Miller")).containsExactlyInAnyOrder(johnDoe);
+
+    var unknownUser = new User(42L, "Not", "known");
+    assertThat(store.update(unknownUser)).isFalse();
+    assertThat(store.findBy(lastNameIndex, unknownUser.getLastName())).isEmpty();
+
   }
 
   @DisplayName("allows adding unique index for existing values without exception")
@@ -65,6 +70,6 @@ public class IdentityMultiIndexStoreTest extends AbstractMultiIndexStoreTest<Ide
 
     var valueFoundById = store.findBy(idIndex, johnDoe.getId());
     assertThat(valueFoundById).isPresent();
-    assertThat(valueFoundById.get()).matches(user -> user == johnDoe || user == janeDoe);
+    assertThat(valueFoundById.get()).matches(user -> user == johnDoe || user == johnDoeCopy);
   }
 }

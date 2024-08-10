@@ -1,5 +1,6 @@
 package com.github.multiindexstore;
 
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.Function;
@@ -62,7 +63,8 @@ public interface MultiIndexStore<V> {
   <K> Set<V> findBy(Index.NonUnique<K, V> index, K key);
 
   /**
-   * Removes a value from the store if it is {@link #contains(Object) contained}.
+   * Removes a value from the store if it is {@link #contains(Object) contained}. Will remove keys from indices if the
+   * given value was the last one stored for that index.
    *
    * @param value the value
    * @return true if the value was present and removed, false if the value was not present
@@ -104,4 +106,50 @@ public interface MultiIndexStore<V> {
    * @throws NullPointerException if the {@code keyMapper} is null
    */
   <K> Index.NonUnique<K, V> createIndex(Function<V, @Nullable K> keyMapper);
+
+  /**
+   * Returns all values currently present in the store.
+   *
+   * @return all values in the store
+   */
+  Set<V> values();
+
+  /**
+   * Returns all keys present for the given index.
+   *
+   * @param index the index
+   * @param <K>   type of key
+   * @return all keys stored for this index
+   * @throws UnknownIndexException if the given index was not created by this store
+   * @throws NullPointerException  if the provided index is null
+   */
+  <K> Set<K> keySet(Index<K, V> index);
+
+  /**
+   * Returns an entry set for the given non-unique index, listing all keys and their values. Keys without a value are
+   * not returned.
+   *
+   * @param index the index
+   * @param <K>   type of key
+   * @return a set of entries, mapping from key to the (non-empty) set of values stored
+   * @throws UnknownIndexException if the given index was not created by this store
+   * @throws NullPointerException  if the provided index is null
+   */
+  <K> Set<Map.Entry<K, Set<V>>> entrySet(Index.NonUnique<K, V> index);
+
+  /**
+   * Returns an entry set for the given unique index, listing all keys for which a value is present.
+   *
+   * @param index the index
+   * @param <K>   type of key
+   * @return a set of entries, mapping from key to the value
+   * @throws UnknownIndexException if the given index was not created by this store
+   * @throws NullPointerException  if the provided index is null
+   */
+  <K> Set<Map.Entry<K, V>> entrySet(Index.Unique<K, V> index);
+
+  /**
+   * Removes all values and in the store. Indices are not deregistered.
+   */
+  void clear();
 }

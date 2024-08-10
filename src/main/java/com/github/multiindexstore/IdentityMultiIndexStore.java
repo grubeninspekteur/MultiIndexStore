@@ -12,7 +12,7 @@ import java.util.Set;
  * {@link IdentityHashMap} internally. Multiple values can be stored even if they return the same values for
  * {@link Object#hashCode()} and {@link Object#equals(Object)}. Existing values can be up
  * <p>
- * Instances are thread-safe.
+ * Instances are thread-safe provided that keys are immutable.
  *
  * @param <V> type of value stored
  */

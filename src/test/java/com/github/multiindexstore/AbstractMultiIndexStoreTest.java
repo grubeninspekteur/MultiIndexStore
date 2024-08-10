@@ -4,23 +4,31 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 import com.github.multiindexstore.Index.NonUnique;
+import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 abstract class AbstractMultiIndexStoreTest<S extends MultiIndexStore<User>> {
 
-  protected final S store = createStore();
+  protected S store;
 
   protected final User johnDoe = new User(1L, "John", "Doe");
   protected final User janeDoe = new User(2L, "Jane", "Doe");
   protected final User johnDoeCopy = new User(1L, "John", "Doe");
   protected final User robertSmith = new User(3L, "Robert", "Smith");
+
+  @BeforeEach
+  public void setup() {
+    store = createStore();
+  }
 
   protected abstract S createStore();
 
@@ -167,6 +175,79 @@ abstract class AbstractMultiIndexStoreTest<S extends MultiIndexStore<User>> {
     assertThatExceptionOfType(IllegalArgumentException.class)
         .isThrownBy(() -> store.findBy(lastNameIndex, "Doe"))
         .withMessage("Provided index is not a member of this store");
+  }
+
+  @DisplayName("returns all values")
+  @Test
+  void returnsAllValues() {
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+
+    var valuesObtained = store.values();
+    assertThat(valuesObtained).containsExactlyInAnyOrder(johnDoe, janeDoe);
+    store.remove(johnDoe);
+    assertThat(valuesObtained).as("set should be a copy").containsExactlyInAnyOrder(johnDoe, janeDoe);
+  }
+
+  @DisplayName("returns key set")
+  @Test
+  void returnsKeySet() {
+    var lastNameIndex = store.createIndex(User::getLastName);
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+    store.insert(robertSmith);
+
+    assertThat(store.keySet(lastNameIndex)).containsExactlyInAnyOrder("Doe", "Smith");
+  }
+
+  @DisplayName("returns unique key entry set")
+  @Test
+  void returnsUniqueKeyEntries() {
+    var uniqueIndex = store.createUniqueIndex(User::getId);
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+    store.insert(robertSmith);
+    store.remove(robertSmith); // check index is tidied up
+
+    assertThat(store.entrySet(uniqueIndex)).containsExactlyInAnyOrder(Map.entry(1L, johnDoe), Map.entry(2L, janeDoe));
+  }
+
+  @DisplayName("returns non-unique key entry set")
+  @Test
+  void returnsNonUniqueKeyEntries() {
+    var lastNameIndex = store.createIndex(User::getLastName);
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+    store.insert(robertSmith);
+
+    assertThat(store.entrySet(lastNameIndex)).containsExactlyInAnyOrder(
+        Map.entry("Doe", Set.of(johnDoe, janeDoe)),
+        Map.entry("Smith", Set.of(robertSmith))
+    );
+
+    store.remove(johnDoe);
+    store.remove(janeDoe);
+
+    assertThat(store.entrySet(lastNameIndex)).containsExactlyInAnyOrder(
+        Map.entry("Smith", Set.of(robertSmith))
+    );
+  }
+
+  @DisplayName("clear the store but keeps the indice")
+  @Test
+  void clear() {
+    var lastNameIndex = store.createIndex(User::getLastName);
+    var idIndex = store.createUniqueIndex(User::getId);
+    store.insert(johnDoe);
+    store.insert(janeDoe);
+    store.insert(robertSmith);
+
+    store.clear();
+
+    assertThat(store.findBy(lastNameIndex, johnDoe.getLastName())).isEmpty();
+    assertThat(store.entrySet(lastNameIndex)).isEmpty();
+    assertThat(store.findBy(idIndex, johnDoe.getId())).isEmpty();
+    assertThat(store.entrySet(idIndex)).isEmpty();
   }
 
   private Runnable createInsertReadRemoveTask(NonUnique<String, User> lastNameIndex, User user,

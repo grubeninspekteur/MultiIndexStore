@@ -1,12 +1,15 @@
 package com.github.multiindexstore.internal;
 
 import com.github.multiindexstore.Index;
+import com.github.multiindexstore.Index.NonUnique;
+import com.github.multiindexstore.Index.Unique;
 import com.github.multiindexstore.MultiIndexStore;
 import com.github.multiindexstore.UnknownIndexException;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
@@ -99,6 +102,57 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
     });
   }
 
+  @Override
+  public Set<V> values() {
+    return guard.readGuard(() -> Collections.unmodifiableSet(createSetWithStoreContainsSemantics(allValues)));
+  }
+
+  @Override
+  public <K> Set<K> keySet(Index<K, V> index) {
+    Objects.requireNonNull(index);
+    return guard.readGuard(() -> {
+      validateIndexExists(index);
+      return Set.copyOf((Set<K>) indexedValuesByIndex.get(index).keySet());
+    });
+  }
+
+  @Override
+  public <K> Set<Entry<K, Set<V>>> entrySet(NonUnique<K, V> index) {
+    Objects.requireNonNull(index);
+    return guard.readGuard(() -> {
+      validateIndexExists(index);
+      Set<Entry<K, Set<V>>> entrySet = new HashSet<>();
+      indexedValuesByIndex.get(index).entrySet()
+          .forEach(entry -> entrySet.add(
+              (Entry<K, Set<V>>) Map.entry(entry.getKey(), createSetWithStoreContainsSemantics(entry.getValue()))));
+      return Collections.unmodifiableSet(entrySet);
+    });
+  }
+
+  @Override
+  public <K> Set<Entry<K, V>> entrySet(Unique<K, V> index) {
+    Objects.requireNonNull(index);
+    return guard.readGuard(() -> {
+      validateIndexExists(index);
+      Set<Entry<K, V>> entrySet = new HashSet<>();
+      indexedValuesByIndex.get(index).entrySet()
+          .forEach(entry -> {
+            var singleValueSet = entry.getValue();
+            entrySet.add(
+                (Entry<K, V>) Map.entry(entry.getKey(), singleValueSet.iterator().next()));
+          });
+      return Collections.unmodifiableSet(entrySet);
+    });
+  }
+
+  @Override
+  public void clear() {
+    guard.writeGuard(() -> {
+      allValues.clear();
+      indexedValuesByIndex.keySet().forEach(index -> indexedValuesByIndex.put(index, new HashMap<>()));
+    });
+  }
+
   protected abstract <K, E> Map<K, E> createMapWithStoreContainsSemantics();
 
   protected abstract <E> Set<E> createSetWithStoreContainsSemantics();
@@ -113,9 +167,7 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
     Objects.requireNonNull(index, "index");
     Objects.requireNonNull(key, "key");
 
-    if (!indexedValuesByIndex.containsKey(index)) {
-      throw new UnknownIndexException();
-    }
+    validateIndexExists(index);
 
     return indexedValuesByIndex.get(index).getOrDefault(key, Set.of());
   }
@@ -123,6 +175,12 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
   protected void updateAllIndices(V value) {
     for (Index<?, V> index : indexedValuesByIndex.keySet()) {
       index(value, index);
+    }
+  }
+
+  private <K> void validateIndexExists(Index<K, V> index) {
+    if (!indexedValuesByIndex.containsKey(index)) {
+      throw new UnknownIndexException();
     }
   }
 
@@ -182,6 +240,9 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
 
           if (valuesForKey != null) {
             valuesForKey.remove(value);
+            if (valuesForKey.isEmpty()) {
+              indexedValuesByIndex.get(index).remove(oldKey);
+            }
           }
         }
       }

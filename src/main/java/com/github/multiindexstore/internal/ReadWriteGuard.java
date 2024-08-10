@@ -25,4 +25,11 @@ public class ReadWriteGuard {
       lock.writeLock().unlock();
     }
   }
+
+  public void writeGuard(Runnable runnable) {
+    writeGuard(() -> {
+      runnable.run();
+      return null;
+    });
+  }
 }

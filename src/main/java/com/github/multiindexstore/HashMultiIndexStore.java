@@ -11,7 +11,7 @@ import java.util.Set;
  * {@link Object#equals(Object)}. Values must be immutable, otherwise consistency of the indices is not guaranteed.
  * Values should also not change their hash code over their lifetime in the store.
  * <p>
- * Instances are thread-safe.
+ * Instances are thread-safe provided that keys are immutable.
  *
  * @param <V> type of value stored
  */
