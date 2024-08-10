@@ -169,9 +169,6 @@ abstract class AbstractMultiIndexStoreTest<S extends MultiIndexStore<User>> {
         .withMessage("Provided index is not a member of this store");
   }
 
-  @Test
-  @DisplayName("allows null keys")
-
   private Runnable createInsertReadRemoveTask(NonUnique<String, User> lastNameIndex, User user,
       CyclicBarrier cyclicBarrier) {
     return () -> {
