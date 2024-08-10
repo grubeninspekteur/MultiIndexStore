@@ -75,13 +75,13 @@ public final class MultiIndexStore<V> {
   // TODO javadoc
   public <K> Set<V> get(Index.NonUnique<K, V> index, K key) {
     return readGuard(() -> {
-      Set<V> resultSet = Util.newIdentityHashSet();
-      resultSet.addAll(getByIndex(index, key));
+      var resultSet = createSet(getByIndex(index, key));
       return Collections.unmodifiableSet(resultSet);
     });
   }
 
   // TODO javadoc
+
   public boolean remove(V value) {
     return writeGuard(() -> {
       if (!contains(value)) {
@@ -93,8 +93,8 @@ public final class MultiIndexStore<V> {
       return true;
     });
   }
-
   // TODO javadoc
+
   public <K> Index.Unique<K, V> createUniqueIndex(Function<V, @Nullable K> keyMapper) {
     Objects.requireNonNull(keyMapper);
     return writeGuard(() -> {
@@ -106,7 +106,6 @@ public final class MultiIndexStore<V> {
   }
 
   // TODO javadoc
-
   public <K> Index.NonUnique<K, V> createIndex(Function<V, @Nullable K> keyMapper) {
     Objects.requireNonNull(keyMapper);
     return writeGuard(() -> {
@@ -114,6 +113,12 @@ public final class MultiIndexStore<V> {
       createIndex(index);
       return index;
     });
+  }
+
+  private <K> Set<V> createSet(Set<V> value) {
+    Set<V> resultSet = Util.newIdentityHashSet();
+    resultSet.addAll(value);
+    return resultSet;
   }
 
   private <K> Set<V> getByIndex(Index<K, V> index, K key) {
@@ -145,7 +150,15 @@ public final class MultiIndexStore<V> {
       Map<Object, Set<V>> valuesByKey = (Map<Object, Set<V>>) indexedValuesByIndex.get(index);
 
       switch (index) {
-        case Index.Unique u -> valuesByKey.put(key, Set.of(value));
+        case Index.Unique u -> {
+          Set<V> existingValue = valuesByKey.get(key);
+          if (existingValue != null && !existingValue.contains(value)) {
+            remove(existingValue.iterator().next());
+          }
+          if (existingValue == null || !existingValue.contains(value)) {
+            valuesByKey.put(key, createSet(Set.of(value)));
+          }
+        }
         case Index.NonUnique n -> {
           valuesByKey.computeIfAbsent(key, (__) -> Util.newIdentityHashSet());
           valuesByKey.get(key).add(value);

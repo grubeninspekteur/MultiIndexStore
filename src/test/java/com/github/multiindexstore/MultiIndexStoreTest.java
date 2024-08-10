@@ -84,7 +84,7 @@ class MultiIndexStoreTest {
   }
 
   @Test
-  @DisplayName("does not remove value entirely if same unique index presented, but overrides unique index")
+  @DisplayName("remove value entirely if same unique index presented")
   void addValueWithSameUniqueIndex() {
     var idIndex = store.createUniqueIndex(User::getId);
     var lastNameIndex = store.createIndex(User::getLastName);
@@ -95,8 +95,7 @@ class MultiIndexStoreTest {
 
     store.add(johnDoeCopy);
     assertThat(store.get(idIndex, 1L)).contains(johnDoeCopy);
-
-    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoe, johnDoeCopy);
+    assertThat(store.get(lastNameIndex, "Doe")).containsExactlyInAnyOrder(johnDoeCopy);
   }
 
   @Test
