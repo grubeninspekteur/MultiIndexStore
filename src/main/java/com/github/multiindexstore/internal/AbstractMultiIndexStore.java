@@ -50,7 +50,7 @@ public abstract class AbstractMultiIndexStore<V> implements MultiIndexStore<V> {
 
   @Override
   public boolean contains(V value) {
-    return guard.writeGuard(() -> reverseIndexMap.containsKey(value));
+    return guard.readGuard(() -> reverseIndexMap.containsKey(value));
   }
 
   @Override
